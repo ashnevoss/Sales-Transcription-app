@@ -1,0 +1,10 @@
+<<<<<<< HEAD:reqirements.txt
+streamlit
+elevenlabs
+httpx
+pydub
+=======
+    streamlit
+    elevenlabs
+    httpx
+>>>>>>> 7f203eac34c87425e4a2e3d8f8bcd78ae787e347:requirements.txt
