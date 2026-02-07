@@ -1,18 +1,8 @@
 import streamlit as st
 from elevenlabs.client import ElevenLabs
 import httpx
-from pydub import AudioSegment
-import io
-import os
-from pydub import AudioSegment
-import os
-
-# REPLACE THIS PATH with the actual path to your ffmpeg bin folder
-os.environ["PATH"] += os.pathsep + r'C:\ffmpeg\bin'
-
-# Manually tell pydub where the files are
-AudioSegment.converter = r"C:\ffmpeg\bin\ffmpeg.exe"
-AudioSegment.ffprobe = r"C:\ffmpeg\bin\ffprobe.exe"
+import threading
+import time
 
 # --- 1. STOCK UI SETUP ---
 st.set_page_config(page_title="Sales Transcript AI", layout="centered")
@@ -25,59 +15,66 @@ with st.sidebar:
     st.subheader("Credit Estimator")
     dur = st.number_input("Call Duration (minutes)", min_value=0, step=1)
     if dur > 0:
+        # 800 credits / 12 mins = ~67 per min
         st.write(f"Estimated Cost: **{dur * 67} credits**")
 
 # --- 3. MAIN INTERFACE ---
 st.title("Sales Call Transcriber")
-uploaded_file = st.file_uploader("Choose an audio file", type=["mp3", "wav", "m4a"])
+st.write("Upload your recording to generate a speaker-separated transcript.")
+
+uploaded_file = st.file_uploader("Choose audio file", type=["mp3", "wav", "m4a"])
 
 if uploaded_file:
     st.audio(uploaded_file)
     
     if st.button("Start Transcription"):
         if not user_api_key:
-            st.error("Please enter your API Key.")
+            st.error("Please enter your API Key in the sidebar.")
         else:
-            try:
-                # Load audio using pydub
-                audio = AudioSegment.from_file(uploaded_file)
-                
-                # Chunk settings: 3 minutes (180,000 ms)
-                chunk_length = 180000 
-                chunks = [audio[i:i + chunk_length] for i in range(0, len(audio), chunk_length)]
-                
-                full_transcript = []
-                client = ElevenLabs(
-                    api_key=user_api_key,
-                    httpx_client=httpx.Client(timeout=300.0) # Lower timeout because chunks are small
-                )
+            status_placeholder = st.empty()
+            # Container to capture data from the background thread
+            sync_box = {"data": None, "error": None}
 
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                for i, chunk in enumerate(chunks):
-                    status_text.info(f"Processing chunk {i+1} of {len(chunks)}...")
-                    
-                    # Convert chunk to buffer
-                    buffer = io.BytesIO()
-                    chunk.export(buffer, format="mp3")
-                    buffer.seek(0)
-                    
-                    # Transcribe chunk
-                    response = client.speech_to_text.convert(
-                        file=buffer,
-                        model_id="scribe_v2",
-                        diarize=True
+            def run_transcription():
+                try:
+                    # Setting a massive 30-minute timeout for the whole file
+                    client = ElevenLabs(
+                        api_key=user_api_key,
+                        httpx_client=httpx.Client(timeout=1800.0)
                     )
-                    full_transcript.append(response.text)
-                    progress_bar.progress((i + 1) / len(chunks))
+                    
+                    # Scribe v2 handles the full file with diarization
+                    result = client.speech_to_text.convert(
+                        file=uploaded_file,
+                        model_id="scribe_v2",
+                        diarize=True 
+                    )
+                    sync_box["data"] = result
+                except Exception as e:
+                    sync_box["error"] = str(e)
 
-                status_text.empty()
-                st.success("Transcription Complete")
-                
-                final_text = "\n\n".join(full_transcript)
-                st.text_area("Full Transcript", value=final_text, height=400)
-                st.download_button("Download Transcript", final_text, file_name="transcript.txt")
+            # Launch the transcription in the background
+            worker_thread = threading.Thread(target=run_transcription)
+            worker_thread.start()
 
-            except Exception as e:
-                st.error(f"Error: {e}")
+            # --- HEARTBEAT LOOP ---
+            # This prevents 'Connection Lost' by forcing UI updates every 5 seconds
+            start_time = time.time()
+            while worker_thread.is_alive():
+                elapsed = int(time.time() - start_time)
+                status_placeholder.info(f"⏳ AI is processing... {elapsed}s elapsed. Do not close this tab.")
+                time.sleep(5) 
+
+            status_placeholder.empty()
+
+            if sync_box["error"]:
+                st.error(f"Transcription Failed: {sync_box['error']}")
+            else:
+                st.success("Transcription Complete!")
+                st.text_area("Transcript Output", value=sync_box["data"].text, height=450)
+                st.download_button(
+                    label="Download as Text File",
+                    data=sync_box["data"].text,
+                    file_name=f"transcript_{uploaded_file.name}.txt",
+                    mime="text/plain"
+                )
