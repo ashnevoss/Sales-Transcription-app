@@ -1,8 +1,3 @@
 [server]
-# Increase the timeout for the browser connection (in seconds)
-# This prevents the 'Connection Lost' message during long tasks
 enableCORS = false
 enableXsrfProtection = false
-
-[browser]
-gatherUsageStats = false

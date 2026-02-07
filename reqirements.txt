@@ -1,3 +1,4 @@
-    streamlit
-    elevenlabs
-    httpx
+streamlit
+elevenlabs
+httpx
+pydub
