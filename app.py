@@ -4,6 +4,15 @@ import httpx
 from pydub import AudioSegment
 import io
 import os
+from pydub import AudioSegment
+import os
+
+# REPLACE THIS PATH with the actual path to your ffmpeg bin folder
+os.environ["PATH"] += os.pathsep + r'C:\ffmpeg\bin'
+
+# Manually tell pydub where the files are
+AudioSegment.converter = r"C:\ffmpeg\bin\ffmpeg.exe"
+AudioSegment.ffprobe = r"C:\ffmpeg\bin\ffprobe.exe"
 
 # --- 1. STOCK UI SETUP ---
 st.set_page_config(page_title="Sales Transcript AI", layout="centered")
